@@ -14,6 +14,15 @@
 #include <fstream>
 #include <iostream>
 
+//如果使用调试模式，可视化点云，需要安装PCL
+#define debug_ 1
+
+#if debug_
+#include <pcl-1.9/pcl/point_cloud.h>
+#include <pcl-1.9/pcl/visualization/cloud_viewer.h>
+pcl::visualization::CloudViewer g_PointCloudView("PointCloud View");//初始化一个pcl窗口
+#endif
+
 class LidarMotionCalibrator
 {
 private:
@@ -34,7 +43,13 @@ private:
     bool enable_pub_pointcloud_;
     double lidar_scan_time_gain_;
 
+#if debug_
+    //可视化点云对象
+    pcl::PointCloud<pcl::PointXYZRGB> visual_cloud_;
+#endif
+
 public:
+
 
     LidarMotionCalibrator(ros::NodeHandle node_handle)
     {
@@ -60,6 +75,29 @@ public:
     {
         if(tf_!=NULL) delete tf_;
     }
+
+#if debug_
+    void visual_cloud_scan(const std::vector<float> &ranges_,const std::vector<double> &angles_,unsigned char r_,unsigned char g_,unsigned char b_)
+    {
+        unsigned char r = r_, g = g_, b = b_; //变量不要重名
+        for(int i = 0; i < ranges_.size();i++)
+        {
+            if(ranges_[i] < 0.05 || std::isnan(ranges_[i]) || std::isinf(ranges_[i]))
+                continue;
+
+            pcl::PointXYZRGB pt;
+            pt.x = ranges_[i] * cos(angles_[i]);
+            pt.y = ranges_[i] * sin(angles_[i]);
+            pt.z = 1.0;
+
+            // pack r/g/b into rgb
+            unsigned int rgb = ((unsigned int)r << 16 | (unsigned int)g << 8 | (unsigned int)b);
+            pt.rgb = *reinterpret_cast<float*>(&rgb);
+
+            visual_cloud_.push_back(pt);
+        }
+    }
+#endif
 
     // 拿到原始的激光数据来进行处理
     void ScanCallBack(const sensor_msgs::LaserScanConstPtr& scan_msg)
@@ -89,6 +127,13 @@ public:
             angles.push_back(scan_msg->angle_min + scan_msg->angle_increment * alpha);
         }
 
+#if debug_
+        visual_cloud_.clear();
+        //转换为pcl::pointcloud for visuailization
+        //数据矫正前、封装打算点云可视化、红色
+        visual_cloud_scan(ranges,angles,255,0,0);
+#endif
+
         tf::Stamped<tf::Pose> start_pose, end_pose;
         if(!getLaserPose(start_pose, ros::Time(startTime), tf_))
         {
@@ -109,10 +154,18 @@ public:
                           endTime,
                           tf_);
 
+#if debug_
+        visual_cloud_scan(ranges,angles,0,255,0);
+#endif
+
         // ROS_INFO("calibration end");
 
         if(enable_pub_pointcloud_) publishPointCloud2(startTime, angles, ranges, intensities);  
         publishScan(scan_msg, ranges, angles, intensities, start_pose, end_pose);
+
+#if debug_
+        g_PointCloudView.showCloud(visual_cloud_.makeShared());
+#endif
     }
 
     
@@ -400,6 +453,7 @@ public:
         }
         for(int alpha = ranges.size() - 1; alpha >= 0; --alpha) {
             double angle = (angles[alpha] < 0 || tfFuzzyZero(angles[alpha])) ? angles[alpha] + 2 * M_PI : angles[alpha];
+            //double angle = (angles[alpha] < 0 || tfFuzzyZero(angles[alpha])) ? angles[alpha] + M_PI : angles[alpha] + M_PI;
             angle += publish_msg.angle_min;
             int index = (int)((angle - publish_msg.angle_min) / publish_msg.angle_increment);
             if(index >= 0 && index < ranges.size()) {
@@ -432,9 +486,26 @@ public:
         //         ROS_INFO("\t%d\t%f\t%f\t%f\t%f\t", alpha, range_alpha, angle_alpha, range_beta, angle_beta);
         //     }
         // }
-        
+#if debug_
+        //封装数据的可视化的测试
+        std::vector<double> angles_temp;
+        std::vector<float> ranges_temp;
+        for(int i = 0; i < publish_msg.ranges.size();i++)
+        {
+            double lidar_dist = publish_msg.ranges[i];
+            double lidar_angle = publish_msg.angle_min + publish_msg.angle_increment * i;
+
+            ranges_temp.push_back(lidar_dist);
+            angles_temp.push_back(lidar_angle);
+        }
+        visual_cloud_scan(ranges_temp,angles_temp,255,255,255);
+#endif
+
         scan_pub_.publish(publish_msg);
     }
+
+    //使用点云将激光可视化
+
 };
 
 

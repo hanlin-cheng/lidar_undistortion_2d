@@ -11,6 +11,4 @@
       <param name="lidar_scan_time_gain" value="1.0"/>
    </node>
 
-   <node pkg="rviz" type="rviz" name="rviz" args="-d $(find lidar_undistortion)/launch/racecar_full.rviz"/>
-
 </launch>
