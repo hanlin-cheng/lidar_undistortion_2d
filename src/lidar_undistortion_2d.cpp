@@ -8,18 +8,46 @@
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl-1.9/pcl/visualization/cloud_viewer.h>
 
 #include <iostream>
 #include <dirent.h>
 #include <fstream>
 #include <iostream>
 
+/**
+ * @brief sensor_msgs::laserscan
+ * //头文件，关键是time_stamped与frame id
+ * header:
+ * seq: 448
+ * stamp:
+ * secs: 93
+ * nsecs: 955000000
+ * frame_id: "base_scan"
+ * //最大角度与最小角度，这里是0~2pi,角度为rad
+ * angle_min: 0.0
+ * angle_max: 6.28318977356
+ * //角度增量，实际上就是角度步长，单位为rad；
+ * //(angle_max-angle_min)/angle_increment即为激光束选择一圈所获得的点云数据数量
+ * angle_increment: 0.0175019223243
+ * //关于激光点云运动时间的问题，目前未应用，直接借鉴官网解释
+ * time_increment: 0.0
+ * scan_time: 0.0
+ * //测距最大范围与最小范围
+ * range_min: 0.119999997318
+ * range_max: 3.5
+ * //点云所携带的环境信息，包括测距信息与强度信息，该数组的长度即为(angle_max-angle_min)/angle_increment
+ * ranges: [0.6837663650512695, 0.6689223051071167, 0.6657941937446594,.....]
+ * intensities: [5.823023349397141e-37, 5.823023349397141e-37, 5.823023349397141e-37......]
+ **/
+
 //如果使用调试模式，可视化点云，需要安装PCL
 #define debug_ 1
+#define debug_distortion_ 1
+#define debug_undistortion_ 1
+#define debug_final_ 1
 
 #if debug_
-#include <pcl-1.9/pcl/point_cloud.h>
-#include <pcl-1.9/pcl/visualization/cloud_viewer.h>
 pcl::visualization::CloudViewer g_PointCloudView("PointCloud View");//初始化一个pcl窗口
 #endif
 
@@ -58,16 +86,17 @@ public:
 
         ros::NodeHandle nh_param("~");
         nh_param.param<std::string>("scan_sub_topic", scan_sub_topic_, "/scan");
-        nh_param.param<std::string>("scan_pub_topic", scan_pub_topic_, "/lidar_undistortion/scan");
-        nh_param.param<bool>("enable_pub_pointcloud", enable_pub_pointcloud_, false);
-        nh_param.param<std::string>("point_cloud_pub_topic", pointcloud_pub_topic_, "/lidar_undistortion/pointcloud");
+        nh_param.param<std::string>("scan_pub_topic", scan_pub_topic_, "/scan_undistortion");
+        nh_param.param<bool>("enable_pub_pointcloud", enable_pub_pointcloud_, true);
+        nh_param.param<std::string>("point_cloud_pub_topic", pointcloud_pub_topic_, "/pointcloud_undistortion");
         nh_param.param<std::string>("lidar_frame", lidar_frame_, "laser_link");
         nh_param.param<std::string>("odom_frame", odom_frame_, "oodm");
         nh_param.param<double>("lidar_scan_time_gain", lidar_scan_time_gain_, 1.0);
 
         scan_sub_ = nh_.subscribe(scan_sub_topic_, 10, &LidarMotionCalibrator::ScanCallBack, this);
         scan_pub_ = nh_.advertise<sensor_msgs::LaserScan>(scan_pub_topic_, 1);
-        if(enable_pub_pointcloud_) pointcloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>(pointcloud_pub_topic_, 1);
+        if(enable_pub_pointcloud_)
+            pointcloud_pub_ = nh_.advertise<sensor_msgs::PointCloud2>(pointcloud_pub_topic_, 1);
     }
 
 
@@ -115,6 +144,7 @@ public:
         std::vector<float> ranges;
         std::vector<float> intensities;
 
+        // 注意这里是倒叙取出数据
         for(int alpha = beamNum - 1; alpha >= 0; alpha--)
         {
             double lidar_dist = scan_msg->ranges[alpha];
@@ -129,6 +159,9 @@ public:
 
 #if debug_
         visual_cloud_.clear();
+#endif
+
+#if debug_distortion_
         //转换为pcl::pointcloud for visuailization
         //数据矫正前、封装打算点云可视化、红色
         visual_cloud_scan(ranges,angles,255,0,0);
@@ -154,13 +187,16 @@ public:
                           endTime,
                           tf_);
 
-#if debug_
+#if debug_undistortion_
+        // 数据矫正之后
         visual_cloud_scan(ranges,angles,0,255,0);
 #endif
 
         // ROS_INFO("calibration end");
 
-        if(enable_pub_pointcloud_) publishPointCloud2(startTime, angles, ranges, intensities);  
+        if(enable_pub_pointcloud_)
+            publishPointCloud2(startTime, angles, ranges, intensities);
+
         publishScan(scan_msg, ranges, angles, intensities, start_pose, end_pose);
 
 #if debug_
@@ -169,7 +205,9 @@ public:
     }
 
     
-
+    /**
+     * @brief 将ensor_msgs::LaserScan转换成sensor_msgs::PointCloud2并发布
+     * */
     void publishPointCloud2(ros::Time start_time,
                             std::vector<double>& angles,
                             std::vector<float>& ranges,
@@ -264,7 +302,6 @@ public:
             int startIndex,
             int& beam_number)
     {
-        //TODO
         // 每个位姿进行线性插值时的步长
         const double beam_step = 1.0 / (beam_number - 1);
 
@@ -313,18 +350,19 @@ public:
 
                 // 里程计坐标系的角度
                 double tmp_angle = tf::getYaw(cur_quaternion) + lidar_angle;
+                // 将角度转换到-pai到pai之间
                 tmp_angle = tfNormalizeAngle(tmp_angle);
 
                 // 如果数据非法 则只需要设置角度就可以了。把角度换算成start_pos坐标系内的角度
                 angles[startIndex + index] = tfNormalizeAngle(tmp_angle - base_angle);
             }
 
+            // 相关日志的输出
             // ROS_INFO("\t%d\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t%lf\t", 
             // startIndex + index, base_point.getX(), base_point.getY(), tf::getYaw(base_quaternion), 
             //                     cur_point.getX(), cur_point.getY(), tf::getYaw(cur_quaternion), 
             // lidar_range, lidar_angle, ranges[startIndex + index], angles[startIndex + index]);
         }
-        //end of TODO
     }
 
 
@@ -451,6 +489,8 @@ public:
             publish_msg.ranges.push_back(0);
             publish_msg.intensities.push_back(0);
         }
+        // 测距和激光强度信息的发布
+        // sensor_msgs::LaserScan的角度是按照分辨率给定的，相邻相差一致，而去畸变的角度差是不固定,所以需要做适当的修改
         for(int alpha = ranges.size() - 1; alpha >= 0; --alpha) {
             double angle = (angles[alpha] < 0 || tfFuzzyZero(angles[alpha])) ? angles[alpha] + 2 * M_PI : angles[alpha];
             //double angle = (angles[alpha] < 0 || tfFuzzyZero(angles[alpha])) ? angles[alpha] + M_PI : angles[alpha] + M_PI;
@@ -486,7 +526,7 @@ public:
         //         ROS_INFO("\t%d\t%f\t%f\t%f\t%f\t", alpha, range_alpha, angle_alpha, range_beta, angle_beta);
         //     }
         // }
-#if debug_
+#if debug_final_
         //封装数据的可视化的测试
         std::vector<double> angles_temp;
         std::vector<float> ranges_temp;
