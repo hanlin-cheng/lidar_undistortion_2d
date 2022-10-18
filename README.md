@@ -10,7 +10,7 @@ This ros package uses odom transform data to correct motion distortion of a 2D L
 
 ## Result
 
-![](media/2022-10-18 16-57-53屏幕截图.png)
+![](media/2022-10-1816-57-53屏幕截图.png)
 
 在图片中，红色点云代表原始的激光雷达数据，白色点云代表经过运动补偿后的激光雷达数据。
 
@@ -42,7 +42,7 @@ remind: '--pause' is essential. otherwise it may lead to error.
 
 ​	4.你可以选择打开pcl可视化或者自行进行rviz订阅节点消息
 
-![](media/2022-10-18 17-00-31屏幕截图.png)
+![](media/2022-10-1817-00-31屏幕截图.png)
 
 ## Reference
 
