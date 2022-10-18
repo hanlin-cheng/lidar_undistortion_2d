@@ -1,3 +1,8 @@
+/**
+ * @date:    Created on 22-10-18
+ * @brief:
+ * @author:  hanlin
+**/
 #include <ros/ros.h>
 #include <tf/tf.h>
 #include <tf/transform_broadcaster.h>
@@ -8,7 +13,7 @@
 #include <pcl/point_types.h>
 #include <pcl/point_cloud.h>
 #include <pcl_conversions/pcl_conversions.h>
-#include <pcl-1.9/pcl/visualization/cloud_viewer.h>
+#include <pcl/visualization/cloud_viewer.h>
 
 #include <iostream>
 #include <dirent.h>
@@ -44,8 +49,8 @@
 //如果使用调试模式，可视化点云，需要安装PCL
 #define debug_ 1
 #define debug_distortion_ 1
-#define debug_undistortion_ 1
-#define debug_final_ 1
+#define debug_undistortion_ 0
+#define debug_final_ 0
 
 #if debug_
 pcl::visualization::CloudViewer g_PointCloudView("PointCloud View");//初始化一个pcl窗口
@@ -89,8 +94,8 @@ public:
         nh_param.param<std::string>("scan_pub_topic", scan_pub_topic_, "/scan_undistortion");
         nh_param.param<bool>("enable_pub_pointcloud", enable_pub_pointcloud_, true);
         nh_param.param<std::string>("point_cloud_pub_topic", pointcloud_pub_topic_, "/pointcloud_undistortion");
-        nh_param.param<std::string>("lidar_frame", lidar_frame_, "laser_link");
-        nh_param.param<std::string>("odom_frame", odom_frame_, "oodm");
+        nh_param.param<std::string>("lidar_frame", lidar_frame_, "laser");
+        nh_param.param<std::string>("odom_frame", odom_frame_, "odom_combined");
         nh_param.param<double>("lidar_scan_time_gain", lidar_scan_time_gain_, 1.0);
 
         scan_sub_ = nh_.subscribe(scan_sub_topic_, 10, &LidarMotionCalibrator::ScanCallBack, this);
@@ -432,7 +437,7 @@ public:
             //分段线性,时间段的大小为interpolation_time_duration
             double mid_time = start_time + time_inc * (i - start_index);
             if(i == beamNumber - 1) {
-                nh_.param<std::string>("odom_frame", odom_frame_, "oodm");
+                nh_.param<std::string>("odom_frame", odom_frame_, "odom");
             }
             if(mid_time - start_time > interpolation_time_duration || (i == beamNumber - 1))
             {
@@ -492,8 +497,8 @@ public:
         // 测距和激光强度信息的发布
         // sensor_msgs::LaserScan的角度是按照分辨率给定的，相邻相差一致，而去畸变的角度差是不固定,所以需要做适当的修改
         for(int alpha = ranges.size() - 1; alpha >= 0; --alpha) {
-            double angle = (angles[alpha] < 0 || tfFuzzyZero(angles[alpha])) ? angles[alpha] + 2 * M_PI : angles[alpha];
-            //double angle = (angles[alpha] < 0 || tfFuzzyZero(angles[alpha])) ? angles[alpha] + M_PI : angles[alpha] + M_PI;
+            //double angle = (angles[alpha] < 0 || tfFuzzyZero(angles[alpha])) ? angles[alpha] + 2 * M_PI : angles[alpha];
+            double angle = (angles[alpha] < 0 || tfFuzzyZero(angles[alpha])) ? angles[alpha] + M_PI : angles[alpha] + M_PI;
             angle += publish_msg.angle_min;
             int index = (int)((angle - publish_msg.angle_min) / publish_msg.angle_increment);
             if(index >= 0 && index < ranges.size()) {
@@ -527,7 +532,7 @@ public:
         //     }
         // }
 #if debug_final_
-        //封装数据的可视化的测试
+        //封装数据的可视化
         std::vector<double> angles_temp;
         std::vector<float> ranges_temp;
         for(int i = 0; i < publish_msg.ranges.size();i++)
@@ -543,8 +548,6 @@ public:
 
         scan_pub_.publish(publish_msg);
     }
-
-    //使用点云将激光可视化
 
 };
 
