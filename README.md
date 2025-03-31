@@ -2,7 +2,7 @@
 
 > #### a ros package for 2d lidar motion compensation
 
-## [原理简介](https://github.com/hanlin-cheng/slam-study-note/blob/master/slam_theory/2d%E6%BF%80%E5%85%89%E9%9B%B7%E8%BE%BE%E8%BF%90%E5%8A%A8%E8%A1%A5%E5%81%BF%E6%96%B9%E6%B3%95(%E5%8E%BB%E7%95%B8%E5%8F%98).md)
+## [原理简介](https://github.com/hanlin-cheng/slam-study-note/blob/master/Algorithm/2d激光雷达运动补偿方法(去畸变).md)
 
 ## Introduction
 
